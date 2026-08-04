@@ -2,7 +2,6 @@ import streamlit as st
 import pandas as pd
 import pdfplumber
 import io
-import re
 
 st.set_page_config(page_title="Folio Processor", layout="wide")
 st.markdown("### Folio Processing")
@@ -18,42 +17,14 @@ if uploaded_file is not None:
             for page in pdf.pages:
                 text = page.extract_text()
                 if text:
-                    lines = [line.strip() for line in text.split("\n") if line.strip()]
-                    i = 0
-                    while i < len(lines):
-                        line = lines[i]
-                        # Look for lines starting with a date (e.g., 07/31/2026)
-                        if re.match(r'^\d{2}/\d{2}/\d{4}$', line):
-                            date_str = line
-                            desc_parts = []
-                            amount_val = 0.0
-                            
-                            i += 1
-                            # Read subsequent lines until we hit another date or a total/tax section
-                            while i < len(lines):
-                                next_line = lines[i]
-                                if re.match(r'^\d{2}/\d{2}/\d{4}$', next_line) or "Total" in next_line or "Balance" in next_line or "Tax" in next_line:
-                                    i -= 1
-                                    break
-                                
-                                if "$" in next_line:
-                                    # Clean and parse amount string like "$ 34.59" or "\$-207.00"
-                                    clean_amt_str = next_line.replace("$", "").replace("\\", "").replace(",", "").strip()
-                                    try:
-                                        amount_val = float(clean_amt_str)
-                                    except ValueError:
-                                        pass
-                                else:
-                                    desc_parts.append(next_line)
-                                i += 1
-                            
-                            full_desc = f"{date_str} - " + " ".join(desc_parts)
+                    for line in text.split("\n"):
+                        clean_line = line.strip()
+                        if clean_line:
                             extracted_items.append({
-                                "description": full_desc,
-                                "amount": amount_val
+                                "description": clean_line,
+                                "amount": 0.0
                             })
-                        i += 1
-                        
+                            
         st.session_state.items = extracted_items
 
     if isinstance(st.session_state.items, list) and len(st.session_state.items) > 0:
@@ -77,7 +48,7 @@ if uploaded_file is not None:
         else:
             st.info("All line items were filtered out based on your criteria.")
     else:
-        st.warning("Could not match the date-led line structure.")
+        st.warning("No text lines could be read from this file.")
 else:
     if "items" in st.session_state:
         del st.session_state.items
