@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 from pypdf import PdfReader
 import io
+import re
 
 st.set_page_config(page_title="Folio Processor", layout="wide")
 st.markdown("### Folio Processing")
@@ -16,16 +17,35 @@ if uploaded_file is not None:
         
         try:
             reader = PdfReader(io.BytesIO(bytes_data))
+            full_text = ""
             for page in reader.pages:
                 text = page.extract_text()
                 if text:
-                    for line in text.split("\n"):
-                        clean_line = line.strip()
-                        if clean_line:
-                            extracted_items.append({
-                                "description": clean_line,
-                                "amount": 0.0
-                            })
+                    full_text += text + "\n"
+            
+            # Look for lines that contain a date and potentially a dollar amount
+            lines = [line.strip() for line in full_text.split("\n") if line.strip()]
+            for line in lines:
+                # Search for currency amounts in the line (e.g., 45.00, -207.00, 1,234.56)
+                amounts = re.findall(r'-?\d{1,3}(?:,\d{3})*\.\d{2}', line)
+                
+                # Try to clean description by removing the matched amount and standard dates if present
+                clean_desc = line
+                amount_val = 0.0
+                
+                if amounts:
+                    # Take the last found number on the line as the transaction amount
+                    amount_str = amounts[-1]
+                    try:
+                        amount_val = float(amount_str.replace(",", ""))
+                    except ValueError:
+                        amount_val = 0.0
+                        
+                if line:
+                    extracted_items.append({
+                        "description": line,
+                        "amount": amount_val
+                    })
         except Exception:
             pass
             
@@ -51,7 +71,7 @@ if uploaded_file is not None:
 
     df_items = pd.DataFrame(filtered_items)
     
-    st.info("File loaded successfully. You can edit descriptions and amounts directly in the table below:")
+    st.info("Folio loaded. Review the extracted descriptions and amounts below, and make adjustments as needed:")
     edited_df = st.data_editor(
         df_items, 
         num_rows="dynamic", 
