@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import pdfplumber
+import io
 import re
 
 st.set_page_config(page_title="Folio Processor", layout="wide")
@@ -9,11 +10,14 @@ st.markdown("### Folio Processing")
 uploaded_file = st.file_uploader("Upload your document (PDF or spreadsheet)", type=["pdf", "csv", "xlsx"])
 
 if uploaded_file is not None:
-    # --- EXACT LAYOUT FOLIO PARSING ---
+    # --- ROBUST BYTE-STREAM FOLIO PARSING ---
     if "items" not in st.session_state or not isinstance(st.session_state.items, list) or len(st.session_state.items) == 0:
         extracted_items = []
         
-        with pdfplumber.open(uploaded_file) as pdf:
+        # Read file bytes securely to prevent stream pointer issues
+        bytes_data = uploaded_file.getvalue()
+        
+        with pdfplumber.open(io.BytesIO(bytes_data)) as pdf:
             for page in pdf.pages:
                 text = page.extract_text()
                 if text:
@@ -21,22 +25,19 @@ if uploaded_file is not None:
                     i = 0
                     while i < len(lines):
                         line = lines[i].strip()
-                        # Check if line starts with a date pattern (MM/DD/YYYY)
+                        # Match line starting with date (MM/DD/YYYY)
                         if re.match(r'^\d{2}/\d{2}/\d{4}', line):
                             date_str = line
                             description_parts = []
                             amount_str = "0.00"
                             
-                            # Look ahead to grab the description text and amounts on following lines
                             i += 1
                             while i < len(lines):
                                 next_line = lines[i].strip()
-                                # Stop looking ahead if we hit another date or summary keyword
-                                if re.match(r'^\d{2}/\d{2}/\d{4}', next_line) or "Total" in next_line or "Balance" in next_line:
-                                    i -= 1 # Step back so the outer loop handles it next
+                                if re.match(r'^\d{2}/\d{2}/\d{4}', next_line) or "Total" in next_line or "Balance" in next_line or "F&B Sales Tax" in next_line:
+                                    i -= 1
                                     break
                                 
-                                # Check if the line contains a dollar amount
                                 if "$" in next_line:
                                     amount_str = next_line
                                 else:
@@ -46,7 +47,6 @@ if uploaded_file is not None:
                             
                             full_description = f"{date_str} - " + " ".join(description_parts)
                             
-                            # Clean up amount into a float value if possible
                             try:
                                 clean_amt = float(amount_str.replace("$", "").replace(",", "").strip())
                             except ValueError:
