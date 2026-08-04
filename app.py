@@ -9,7 +9,7 @@ st.markdown("### Folio Processing")
 uploaded_file = st.file_uploader("Upload your document (PDF or spreadsheet)", type=["pdf", "csv", "xlsx"])
 
 if uploaded_file is not None:
-    # --- CUSTOM FOLIO PARSING LOGIC ---
+    # --- PRECISE FOLIO PARSING LOGIC ---
     if "items" not in st.session_state or not isinstance(st.session_state.items, list) or len(st.session_state.items) == 0:
         extracted_items = []
         
@@ -19,9 +19,13 @@ if uploaded_file is not None:
                 if text:
                     lines = text.split("\n")
                     for line in lines:
-                        # Look for lines starting with dates like MM/DD/YYYY
-                        if re.match(r'^\d{2}/\d{2}/\d{4}', line.strip()):
-                            extracted_items.append({"description": line.strip(), "amount": 0.0})
+                        clean_line = line.strip()
+                        # Match lines starting with a standard date format
+                        if re.match(r'^\d{2}/\d{2}/\d{4}', clean_line):
+                            extracted_items.append({
+                                "description": clean_line,
+                                "amount": 0.0
+                            })
                             
         st.session_state.items = extracted_items
 
@@ -47,7 +51,7 @@ if uploaded_file is not None:
         else:
             st.info("All line items were filtered out based on your criteria.")
     else:
-        st.warning("No matching charge lines starting with dates could be extracted from this PDF.")
+        st.warning("The file was uploaded, but no charge lines matching the date format could be extracted.")
 else:
     if "items" in st.session_state:
         del st.session_state.items
