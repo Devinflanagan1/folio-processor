@@ -12,23 +12,7 @@ with col1:
 with col2:
     departure_date = st.date_input("Departure Date")
 
-if "prev_arrival" not in st.session_state:
-    st.session_state.prev_arrival = arrival_date
-    
-if st.session_state.prev_arrival != arrival_date:
-    st.session_state.base_data = pd.DataFrame([
-        {"Date": arrival_date, "Category": "Field Notes (Breakfast)", "Amount": "0.00"}
-    ])
-    st.session_state.last_date = arrival_date
-    st.session_state.prev_arrival = arrival_date
-    if "charge_editor" in st.session_state:
-        del st.session_state["charge_editor"]
-
-st.markdown("---")
-st.markdown("#### Enter Charges")
-st.info("Log all eligible charges below. Note: Charges on the Arrival Date automatically route to the Property Credit pool since arrival day does not include a breakfast credit night.")
-
-# 2. Setup Data Editor
+# Initialize session state persistently
 if "base_data" not in st.session_state:
     st.session_state.base_data = pd.DataFrame([
         {"Date": arrival_date, "Category": "Field Notes (Breakfast)", "Amount": "0.00"}
@@ -37,6 +21,22 @@ if "base_data" not in st.session_state:
 if "last_date" not in st.session_state:
     st.session_state.last_date = arrival_date
 
+if "prev_arrival" not in st.session_state:
+    st.session_state.prev_arrival = arrival_date
+    
+# Reset data cleanly only if arrival date changes
+if st.session_state.prev_arrival != arrival_date:
+    st.session_state.base_data = pd.DataFrame([
+        {"Date": arrival_date, "Category": "Field Notes (Breakfast)", "Amount": "0.00"}
+    ])
+    st.session_state.last_date = arrival_date
+    st.session_state.prev_arrival = arrival_date
+
+st.markdown("---")
+st.markdown("#### Enter Charges")
+st.info("Log all eligible charges below. Note: Charges on the Arrival Date automatically route to the Property Credit pool since arrival day does not include a breakfast credit night.")
+
+# 2. Setup Data Editor with direct session state persistence
 edited_df = st.data_editor(
     st.session_state.base_data,
     num_rows="dynamic",
@@ -60,15 +60,18 @@ edited_df = st.data_editor(
     key="charge_editor"
 )
 
-if not edited_df.empty:
-    try:
-        st.session_state.last_date = pd.to_datetime(edited_df["Date"].iloc[-1]).date()
-    except Exception:
-        st.session_state.last_date = arrival_date
+# Immediately save edits back to session state so data is never wiped on click
+if isinstance(edited_df, pd.DataFrame):
+    st.session_state.base_data = edited_df
+    if not edited_df.empty:
+        try:
+            st.session_state.last_date = pd.to_datetime(edited_df["Date"].iloc[-1]).date()
+        except Exception:
+            st.session_state.last_date = arrival_date
 
 # 3. Calculation Logic
 if st.button("Calculate Credits", type="primary"):
-    calc_df = edited_df.copy()
+    calc_df = st.session_state.base_data.copy()
     calc_df["Date"] = pd.to_datetime(calc_df["Date"]).dt.date
     
     def clean_amount(val):
@@ -85,10 +88,8 @@ if st.button("Calculate Credits", type="primary"):
     breakdown = []
     
     # --- BREAKFAST CREDIT ($60/day non-rolling for stayed nights ONLY) ---
-    # Nights eligible for breakfast credit start the day AFTER arrival up through departure day
     breakfast_df = calc_df[calc_df["Category"] == "Field Notes (Breakfast)"]
     
-    # Any breakfast charges on the exact arrival date are moved to property charges pool
     arrival_breakfast_charges = breakfast_df[breakfast_df["Date"] == arrival_date]["Amount_Num"].sum()
     
     valid_breakfast_df = breakfast_df[breakfast_df["Date"] > arrival_date]
