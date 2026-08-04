@@ -1,13 +1,14 @@
 import streamlit as st
 import pandas as pd
-import pypdf
+from pdf2image import convert_from_bytes
+import pytesseract
 import io
 import re
 
 st.set_page_config(page_title="Folio Processor", layout="wide")
 st.markdown("### Folio Processing")
 
-uploaded_file = st.file_uploader("Upload your document (PDF or spreadsheet)", type=["pdf", "csv", "xlsx"])
+uploaded_file = st.file_uploader("Upload your document (PDF, Image, or spreadsheet)", type=["pdf", "png", "jpg", "jpeg", "csv", "xlsx"])
 
 if uploaded_file is not None:
     if "current_file" not in st.session_state or st.session_state.current_file != uploaded_file.name:
@@ -15,38 +16,55 @@ if uploaded_file is not None:
         extracted_items = []
         bytes_data = uploaded_file.getvalue()
         
+        full_text = ""
+        
+        # Handle PDFs (including locked/vector PDFs via OCR image conversion)
         if uploaded_file.name.lower().endswith(".pdf"):
             try:
-                reader = pypdf.PdfReader(io.BytesIO(bytes_data))
-                for idx, page in enumerate(reader.pages):
-                    text = page.extract_text()
+                images = convert_from_bytes(bytes_data)
+                for image in images:
+                    text = pytesseract.image_to_string(image)
                     if text:
-                        for line in text.split("\n"):
-                            clean_line = line.strip()
-                            if clean_line:
-                                amounts = re.findall(r'-?\d{1,3}(?:,\d{3})*\.\d{2}', clean_line)
-                                amount_val = 0.0
-                                if amounts:
-                                    try:
-                                        amount_val = float(amounts[-1].replace(",", ""))
-                                    except ValueError:
-                                        amount_val = 0.0
-                                        
-                                extracted_items.append({
-                                    "description": clean_line,
-                                    "amount": amount_val
-                                })
+                        full_text += text + "\n"
             except Exception as e:
-                extracted_items.append({"description": f"Error reading PDF: {str(e)}", "amount": 0.0})
+                extracted_items.append({"description": f"OCR Error: {str(e)}", "amount": 0.0})
+                
+        # Handle Direct Image Uploads (Snipping Tool / Screenshots)
+        elif uploaded_file.name.lower().endswith((".png", ".jpg", ".jpeg")):
+            try:
+                from PIL import Image
+                image = Image.open(io.BytesIO(bytes_data))
+                full_text = pytesseract.image_to_string(image)
+            except Exception as e:
+                extracted_items.append({"description": f"Image Error: {str(e)}", "amount": 0.0})
+                
+        # Handle Spreadsheets
         elif uploaded_file.name.lower().endswith(".csv"):
             df_upload = pd.read_csv(uploaded_file)
             extracted_items = df_upload.to_dict("records")
         elif uploaded_file.name.lower().endswith(".xlsx"):
             df_upload = pd.read_excel(uploaded_file)
             extracted_items = df_upload.to_dict("records")
+
+        # Parse text lines if we gathered text from PDF/OCR/Screenshot
+        if full_text.strip():
+            lines = [line.strip() for line in full_text.split("\n") if line.strip()]
+            for line in lines:
+                amounts = re.findall(r'-?\d{1,3}(?:,\d{3})*\.\d{2}', line)
+                amount_val = 0.0
+                if amounts:
+                    try:
+                        amount_val = float(amounts[-1].replace(",", ""))
+                    except ValueError:
+                        amount_val = 0.0
+                        
+                extracted_items.append({
+                    "description": line,
+                    "amount": amount_val
+                })
             
         if not extracted_items:
-            extracted_items = [{"description": "Manual Entry - PDF text layer empty", "amount": 0.0}]
+            extracted_items = [{"description": "Manual Entry - No text found", "amount": 0.0}]
             
         st.session_state.items = extracted_items
 
@@ -63,7 +81,7 @@ if uploaded_file is not None:
 
     df_items = pd.DataFrame(filtered_items)
     
-    st.info("Review extracted lines below or type/paste additional rows:")
+    st.info("Folio successfully processed via OCR/Upload. Review and edit items below:")
     
     edited_df = st.data_editor(
         df_items, 
@@ -78,4 +96,4 @@ else:
     if "current_file" in st.session_state:
         del st.session_state.current_file
         
-    st.info("Please upload a file to begin.")
+    st.info("Please upload a file or screenshot to begin.")
