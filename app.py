@@ -34,6 +34,12 @@ elif uploaded_file is not None:
         elif uploaded_file.name.lower().endswith(".xlsx"):
             df_upload = pd.read_excel(uploaded_file)
             extracted_items = df_upload.to_dict("records")
+        elif uploaded_file.name.lower().endswith(".pdf"):
+            # Fallback helper prompt for locked PDFs since direct parsing fails
+            extracted_items = [{
+                "description": "PDF text is locked/vectorized. Please copy text from PDF and paste in the text box above.", 
+                "amount": 0.0
+            }]
     except Exception:
         pass
 
