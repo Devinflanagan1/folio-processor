@@ -1,5 +1,8 @@
 import streamlit as st
 import pandas as pd
+from pypdf import PdfReader
+import io
+import re
 
 st.set_page_config(page_title="Folio Processor", layout="wide")
 st.markdown("### Folio Processing")
@@ -9,27 +12,47 @@ uploaded_file = st.file_uploader("Upload your document (PDF or spreadsheet)", ty
 if uploaded_file is not None:
     if "current_file" not in st.session_state or st.session_state.current_file != uploaded_file.name:
         st.session_state.current_file = uploaded_file.name
+        extracted_items = []
+        bytes_data = uploaded_file.getvalue()
         
-        # Parse spreadsheet directly if uploaded as CSV or Excel
-        loaded_items = []
-        try:
-            if uploaded_file.name.lower().endswith(".csv"):
-                df_upload = pd.read_csv(uploaded_file)
-                loaded_items = df_upload.to_dict("records")
-            elif uploaded_file.name.lower().endswith(".xlsx"):
-                df_upload = pd.read_excel(uploaded_file)
-                loaded_items = df_upload.to_dict("records")
-        except Exception:
-            pass
+        if uploaded_file.name.lower().endswith(".pdf"):
+            try:
+                reader = PdfReader(io.BytesIO(bytes_data))
+                for page in reader.pages:
+                    # Extract text using basic extraction and visitor extraction to catch different layout types
+                    page_text = page.extract_text()
+                    if page_text:
+                        for line in page_text.split("\n"):
+                            clean_line = line.strip()
+                            if clean_line:
+                                # Look for dollar amounts in the line
+                                amounts = re.findall(r'-?\d{1,3}(?:,\d{3})*\.\d{2}', clean_line)
+                                amount_val = 0.0
+                                if amounts:
+                                    try:
+                                        amount_val = float(amounts[-1].replace(",", ""))
+                                    except ValueError:
+                                        amount_val = 0.0
+                                        
+                                extracted_items.append({
+                                    "description": clean_line,
+                                    "amount": amount_val
+                                })
+            except Exception:
+                pass
+        elif uploaded_file.name.lower().endswith(".csv"):
+            df_upload = pd.read_csv(uploaded_file)
+            extracted_items = df_upload.to_dict("records")
+        elif uploaded_file.name.lower().endswith(".xlsx"):
+            df_upload = pd.read_excel(uploaded_file)
+            extracted_items = df_upload.to_dict("records")
             
-        if loaded_items:
-            st.session_state.items = loaded_items
-        else:
-            st.session_state.items = [
-                {"description": "Paste or type folio items here", "amount": 0.0}
-            ]
+        if not extracted_items:
+            extracted_items = [{"description": "Manual Entry - No text found in PDF", "amount": 0.0}]
+            
+        st.session_state.items = extracted_items
 
-    safe_items = st.session_state.items if isinstance(st.session_state.items, list) and len(st.session_state.items) > 0 else [{"description": "Paste or type folio items here", "amount": 0.0}]
+    safe_items = st.session_state.items if isinstance(st.session_state.items, list) and len(st.session_state.items) > 0 else [{"description": "Manual Entry", "amount": 0.0}]
 
     ignored_descriptions = ["AMEX Breakfast Credit", "THC AMEX CREDIT"]
     filtered_items = [
@@ -38,11 +61,11 @@ if uploaded_file is not None:
     ]
     
     if not filtered_items:
-        filtered_items = [{"description": "Paste or type folio items here", "amount": 0.0}]
+        filtered_items = [{"description": "Manual Entry", "amount": 0.0}]
 
     df_items = pd.DataFrame(filtered_items)
     
-    st.info("Edit, add, or paste your folio line items and amounts directly below:")
+    st.info("Review extracted lines below or type/paste additional rows:")
     
     edited_df = st.data_editor(
         df_items, 
