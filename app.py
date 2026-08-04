@@ -42,19 +42,22 @@ elif uploaded_file is not None:
     except Exception:
         pass
 
-# Always ensure session state handles updates smoothly without resetting active edits
-if "current_file" not in st.session_state or st.session_state.current_file != getattr(uploaded_file, "name", None) or pasted_data.strip():
+# Force initialization or update of session state safely
+current_filename = getattr(uploaded_file, "name", None)
+if "current_file" not in st.session_state or st.session_state.current_file != current_filename or pasted_data.strip():
     if extracted_items:
         st.session_state.items = extracted_items
-    st.session_state.current_file = getattr(uploaded_file, "name", None)
+    st.session_state.current_file = current_filename
 
-if "items" not in st.session_state or not isinstance(st.session_state.items, list) or len(st.session_state.items) == 0:
+if "items" not in st.session_state or not isinstance(st.session_state.items, list):
     st.session_state.items = [{"description": "Manual Entry", "amount": 0.0}]
 
 ignored_descriptions = ["AMEX Breakfast Credit", "THC AMEX CREDIT"]
 
+safe_items = st.session_state.items if isinstance(st.session_state.items, list) else [{"description": "Manual Entry", "amount": 0.0}]
+
 filtered_items = [
-    item for item in st.session_state.items 
+    item for item in safe_items 
     if isinstance(item, dict) and not any(ignored in str(item.get("description", "")) for ignored in ignored_descriptions)
 ]
 
