@@ -39,8 +39,10 @@ if uploaded_file is not None:
 
     ignored_descriptions = ["AMEX Breakfast Credit", "THC AMEX CREDIT"]
     
+    safe_items = st.session_state.items if isinstance(st.session_state.items, list) else [{"description": "Manual Entry", "amount": 0.0}]
+    
     filtered_items = [
-        item for item in st.session_state.items 
+        item for item in safe_items 
         if isinstance(item, dict) and not any(ignored in str(item.get("description", "")) for ignored in ignored_descriptions)
     ]
     
