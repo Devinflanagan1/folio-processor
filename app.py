@@ -9,7 +9,8 @@ st.markdown("### Folio Processing")
 uploaded_file = st.file_uploader("Upload your document (PDF or spreadsheet)", type=["pdf", "csv", "xlsx"])
 
 if uploaded_file is not None:
-    if "items" not in st.session_state or not isinstance(st.session_state.items, list) or len(st.session_state.items) == 0:
+    if "current_file" not in st.session_state or st.session_state.current_file != uploaded_file.name:
+        st.session_state.current_file = uploaded_file.name
         extracted_items = []
         bytes_data = uploaded_file.getvalue()
         
@@ -29,14 +30,11 @@ if uploaded_file is not None:
             pass
             
         if not extracted_items:
-            extracted_items = [{"description": "Manual Entry (PDF text layer unreadable)", "amount": 0.0}]
+            extracted_items = [{"description": "Manual Entry", "amount": 0.0}]
                         
         st.session_state.items = extracted_items
 
-    if isinstance(st.session_state.items, pd.DataFrame):
-        st.session_state.items = st.session_state.items.to_dict("records")
-
-    if not isinstance(st.session_state.items, list):
+    if "items" not in st.session_state or not isinstance(st.session_state.items, list):
         st.session_state.items = [{"description": "Manual Entry", "amount": 0.0}]
 
     ignored_descriptions = ["AMEX Breakfast Credit", "THC AMEX CREDIT"]
@@ -62,5 +60,7 @@ if uploaded_file is not None:
 else:
     if "items" in st.session_state:
         del st.session_state.items
+    if "current_file" in st.session_state:
+        del st.session_state.current_file
         
     st.info("Please upload a file to begin editing the data.")
