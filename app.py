@@ -26,9 +26,9 @@ if st.session_state.prev_arrival != arrival_date:
 
 st.markdown("---")
 st.markdown("#### Enter Charges")
-st.info("Log all eligible charges below. Amounts can be entered directly as numbers (e.g., 34.59).")
+st.info("Log all eligible charges below. Note: Charges on the Arrival Date automatically route to the Property Credit pool since arrival day does not include a breakfast credit night.")
 
-# 2. Setup Data Editor using text for Amount to prevent tab-clearing bugs
+# 2. Setup Data Editor
 if "base_data" not in st.session_state:
     st.session_state.base_data = pd.DataFrame([
         {"Date": arrival_date, "Category": "Field Notes (Breakfast)", "Amount": "0.00"}
@@ -71,7 +71,6 @@ if st.button("Calculate Credits", type="primary"):
     calc_df = edited_df.copy()
     calc_df["Date"] = pd.to_datetime(calc_df["Date"]).dt.date
     
-    # Safely convert text amount inputs to floats
     def clean_amount(val):
         try:
             cleaned = str(val).replace("$", "").replace(",", "").strip()
@@ -85,12 +84,18 @@ if st.button("Calculate Credits", type="primary"):
     total_breakfast_overage = 0.0
     breakdown = []
     
-    # --- BREAKFAST CREDIT ($60/day non-rolling) ---
+    # --- BREAKFAST CREDIT ($60/day non-rolling for stayed nights ONLY) ---
+    # Nights eligible for breakfast credit start the day AFTER arrival up through departure day
     breakfast_df = calc_df[calc_df["Category"] == "Field Notes (Breakfast)"]
-    daily_breakfast = breakfast_df.groupby("Date")["Amount_Num"].sum().reset_index()
     
-    current_date = arrival_date
-    while current_date < departure_date:
+    # Any breakfast charges on the exact arrival date are moved to property charges pool
+    arrival_breakfast_charges = breakfast_df[breakfast_df["Date"] == arrival_date]["Amount_Num"].sum()
+    
+    valid_breakfast_df = breakfast_df[breakfast_df["Date"] > arrival_date]
+    daily_breakfast = valid_breakfast_df.groupby("Date")["Amount_Num"].sum().reset_index()
+    
+    current_date = arrival_date + timedelta(days=1)
+    while current_date <= departure_date:
         day_charge = daily_breakfast[daily_breakfast["Date"] == current_date]["Amount_Num"].sum() if current_date in daily_breakfast["Date"].values else 0.0
         
         eligible_credit = min(day_charge, 60.0)
@@ -109,7 +114,7 @@ if st.button("Calculate Credits", type="primary"):
         
     # --- PROPERTY CREDIT ($100 Pool) ---
     other_df = calc_df[calc_df["Category"] == "Other Property Charge"]
-    total_other_charges = other_df["Amount_Num"].sum()
+    total_other_charges = other_df["Amount_Num"].sum() + arrival_breakfast_charges
     
     prop_credit_applied_to_other = min(total_other_charges, 100.0)
     remaining_prop_credit = 100.0 - prop_credit_applied_to_other
@@ -134,11 +139,14 @@ if st.button("Calculate Credits", type="primary"):
         st.metric(
             "Property Credit to Post", 
             f"${total_property_credit_to_post:.2f}", 
-            help=f"${prop_credit_applied_to_other:.2f} to property charges, ${prop_credit_applied_to_overage:.2f} to breakfast overage."
+            help=f"${prop_credit_applied_to_other:.2f} to property/arrival charges, ${prop_credit_applied_to_overage:.2f} to breakfast overage."
         )
+        
+    if arrival_breakfast_charges > 0:
+        st.info(f"Note: **${arrival_breakfast_charges:.2f}** in Field Notes charges logged on the arrival date were automatically routed to the $100 property credit pool.")
         
     if final_remaining_prop_credit > 0:
         st.info(f"Guest left **${final_remaining_prop_credit:.2f}** of their $100 property credit unused.")
         
-    st.markdown("#### Daily Breakfast Breakdown")
+    st.markdown("#### Daily Breakfast Breakdown (Stayed Nights)")
     st.dataframe(pd.DataFrame(breakdown), use_container_width=True)
