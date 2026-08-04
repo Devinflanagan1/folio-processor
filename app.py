@@ -33,6 +33,9 @@ if uploaded_file is not None:
                         
         st.session_state.items = extracted_items
 
+    if isinstance(st.session_state.items, pd.DataFrame):
+        st.session_state.items = st.session_state.items.to_dict("records")
+
     if not isinstance(st.session_state.items, list):
         st.session_state.items = [{"description": "Manual Entry", "amount": 0.0}]
 
