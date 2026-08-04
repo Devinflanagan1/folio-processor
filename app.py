@@ -22,14 +22,19 @@ if "charge_data" not in st.session_state:
         {"Date": arrival_date, "Category": "Field Notes (Breakfast)", "Amount": 0.0}
     ])
 
+# Determine the most recent date to use as the default for new rows
+if not st.session_state.charge_data.empty:
+    last_date = pd.to_datetime(st.session_state.charge_data["Date"].iloc[-1]).date()
+else:
+    last_date = arrival_date
+
 edited_df = st.data_editor(
     st.session_state.charge_data,
     num_rows="dynamic",
     column_config={
-        "Date": st.column_config.DateColumn("Charge Date", default=arrival_date),
+        "Date": st.column_config.DateColumn("Charge Date", default=last_date),
         "Category": st.column_config.SelectboxColumn(
             "Category",
-            help="Select the type of charge",
             options=["Field Notes (Breakfast)", "Other Property Charge"],
             required=True
         ),
@@ -38,6 +43,9 @@ edited_df = st.data_editor(
     use_container_width=True,
     key="charge_editor"
 )
+
+# Sync state immediately so the next row added picks up any date edits you just made
+st.session_state.charge_data = edited_df
 
 # 3. Calculation Logic
 if st.button("Calculate Credits", type="primary"):
@@ -53,10 +61,8 @@ if st.button("Calculate Credits", type="primary"):
     
     current_date = arrival_date
     while current_date < departure_date:
-        # Get total breakfast charges for the current date
         day_charge = daily_breakfast[daily_breakfast["Date"] == current_date]["Amount"].sum() if current_date in daily_breakfast["Date"].values else 0.0
         
-        # Cap the credit at $60 per day
         eligible_credit = min(day_charge, 60.0)
         day_overage = max(0.0, day_charge - 60.0)
         
@@ -67,7 +73,7 @@ if st.button("Calculate Credits", type="primary"):
             "Date": current_date.strftime("%Y-%m-%d"),
             "Breakfast Charged": f"${day_charge:.2f}",
             "Breakfast Credit Applied": f"${eligible_credit:.2f}",
-            "Uncovered Overage": day_overage # Stored as float for math, formatted later
+            "Uncovered Overage": day_overage 
         })
         current_date += timedelta(days=1)
         
@@ -75,18 +81,15 @@ if st.button("Calculate Credits", type="primary"):
     other_df = edited_df[edited_df["Category"] == "Other Property Charge"]
     total_other_charges = other_df["Amount"].sum()
     
-    # Step A: Apply $100 credit to 'Other' charges first
     prop_credit_applied_to_other = min(total_other_charges, 100.0)
     remaining_prop_credit = 100.0 - prop_credit_applied_to_other
     
-    # Step B: Apply remaining property credit to any breakfast overages
     prop_credit_applied_to_overage = min(total_breakfast_overage, remaining_prop_credit)
     final_remaining_prop_credit = remaining_prop_credit - prop_credit_applied_to_overage
     
     total_property_credit_to_post = prop_credit_applied_to_other + prop_credit_applied_to_overage
     total_credit_to_post = total_breakfast_credit + total_property_credit_to_post
     
-    # Format overage column for display
     for day in breakdown:
         day["Uncovered Overage"] = f"${day['Uncovered Overage']:.2f}"
         
