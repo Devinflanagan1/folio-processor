@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-from pypdf import PdfReader
+import pypdf
 import io
 import re
 
@@ -17,15 +17,13 @@ if uploaded_file is not None:
         
         if uploaded_file.name.lower().endswith(".pdf"):
             try:
-                reader = PdfReader(io.BytesIO(bytes_data))
-                for page in reader.pages:
-                    # Extract text using basic extraction and visitor extraction to catch different layout types
-                    page_text = page.extract_text()
-                    if page_text:
-                        for line in page_text.split("\n"):
+                reader = pypdf.PdfReader(io.BytesIO(bytes_data))
+                for idx, page in enumerate(reader.pages):
+                    text = page.extract_text()
+                    if text:
+                        for line in text.split("\n"):
                             clean_line = line.strip()
                             if clean_line:
-                                # Look for dollar amounts in the line
                                 amounts = re.findall(r'-?\d{1,3}(?:,\d{3})*\.\d{2}', clean_line)
                                 amount_val = 0.0
                                 if amounts:
@@ -38,8 +36,8 @@ if uploaded_file is not None:
                                     "description": clean_line,
                                     "amount": amount_val
                                 })
-            except Exception:
-                pass
+            except Exception as e:
+                extracted_items.append({"description": f"Error reading PDF: {str(e)}", "amount": 0.0})
         elif uploaded_file.name.lower().endswith(".csv"):
             df_upload = pd.read_csv(uploaded_file)
             extracted_items = df_upload.to_dict("records")
@@ -48,7 +46,7 @@ if uploaded_file is not None:
             extracted_items = df_upload.to_dict("records")
             
         if not extracted_items:
-            extracted_items = [{"description": "Manual Entry - No text found in PDF", "amount": 0.0}]
+            extracted_items = [{"description": "Manual Entry - PDF text layer empty", "amount": 0.0}]
             
         st.session_state.items = extracted_items
 
