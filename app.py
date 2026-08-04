@@ -5,15 +5,14 @@ import re
 st.set_page_config(page_title="Folio Processor", layout="wide")
 st.markdown("### Folio Processing")
 
-uploaded_file = st.file_uploader("Upload spreadsheet or document", type=["pdf", "csv", "xlsx"])
-
-pasted_data = st.text_area("Or paste copied folio text/lines here (one per line):", placeholder="Example:\nRoom Charge 250.00\nValet Parking 45.00")
-
-# Initialize session state for items securely if not present
+# Initialize session state safely
 if "items" not in st.session_state or not isinstance(st.session_state.items, list):
     st.session_state.items = [{"description": "Manual Entry", "amount": 0.0}]
 
-# Handle text area input
+uploaded_file = st.file_uploader("Upload spreadsheet or document", type=["pdf", "csv", "xlsx"])
+pasted_data = st.text_area("Or paste copied folio text/lines here (one per line):", placeholder="Example:\nRoom Charge 250.00\nValet Parking 45.00")
+
+# Process pasted text
 if pasted_data.strip():
     new_items = []
     for line in pasted_data.split("\n"):
@@ -33,32 +32,26 @@ if pasted_data.strip():
     if new_items:
         st.session_state.items = new_items
 
-# Handle file upload input
+# Process file upload
 elif uploaded_file is not None:
-    current_filename = getattr(uploaded_file, "name", None)
-    if "current_file" not in st.session_state or st.session_state.current_file != current_filename:
-        st.session_state.current_file = current_filename
-        file_items = []
-        try:
-            if current_filename.lower().endswith(".csv"):
-                df_upload = pd.read_csv(uploaded_file)
-                file_items = df_upload.to_dict("records")
-            elif current_filename.lower().endswith(".xlsx"):
-                df_upload = pd.read_excel(uploaded_file)
-                file_items = df_upload.to_dict("records")
-            elif current_filename.lower().endswith(".pdf"):
-                file_items = [{
-                    "description": "PDF text is locked/vectorized. Please copy text from PDF and paste it in the text box above.", 
-                    "amount": 0.0
-                }]
-        except Exception:
-            pass
-        
-        if file_items:
-            st.session_state.items = file_items
+    try:
+        filename = uploaded_file.name.lower()
+        if filename.endswith(".csv"):
+            df_upload = pd.read_csv(uploaded_file)
+            st.session_state.items = df_upload.to_dict("records")
+        elif filename.endswith(".xlsx"):
+            df_upload = pd.read_excel(uploaded_file)
+            st.session_state.items = df_upload.to_dict("records")
+        elif filename.endswith(".pdf"):
+            st.session_state.items = [{
+                "description": "PDF text is locked/vectorized. Please copy text from PDF and paste it in the text box above.", 
+                "amount": 0.0
+            }]
+    except Exception:
+        pass
 
+# Render table from session state
 ignored_descriptions = ["AMEX Breakfast Credit", "THC AMEX CREDIT"]
-
 safe_items = st.session_state.items if isinstance(st.session_state.items, list) else [{"description": "Manual Entry", "amount": 0.0}]
 
 filtered_items = [
