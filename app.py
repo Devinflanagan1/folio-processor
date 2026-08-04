@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-from pypdf import PdfReader
+import fitz  # PyMuPDF
 import io
 import re
 
@@ -15,52 +15,57 @@ if uploaded_file is not None:
         extracted_items = []
         bytes_data = uploaded_file.getvalue()
         
-        try:
-            reader = PdfReader(io.BytesIO(bytes_data))
-            full_text = ""
-            for page in reader.pages:
-                text = page.extract_text()
-                if text:
-                    full_text += text + "\n"
-            
-            # Look for lines that contain a date and potentially a dollar amount
-            lines = [line.strip() for line in full_text.split("\n") if line.strip()]
-            for line in lines:
-                # Search for currency amounts in the line (e.g., 45.00, -207.00, 1,234.56)
-                amounts = re.findall(r'-?\d{1,3}(?:,\d{3})*\.\d{2}', line)
+        # Handle PDF Files
+        if uploaded_file.name.lower().endswith(".pdf"):
+            try:
+                # Open PDF with PyMuPDF
+                doc = fitz.open(stream=bytes_data, filetype="pdf")
+                full_text = ""
+                for page in doc:
+                    full_text += page.get_text("text") + "\n"
                 
-                # Try to clean description by removing the matched amount and standard dates if present
-                clean_desc = line
-                amount_val = 0.0
-                
-                if amounts:
-                    # Take the last found number on the line as the transaction amount
-                    amount_str = amounts[-1]
-                    try:
-                        amount_val = float(amount_str.replace(",", ""))
-                    except ValueError:
-                        amount_val = 0.0
-                        
-                if line:
+                # Process extracted text
+                lines = [line.strip() for line in full_text.split("\n") if line.strip()]
+                for line in lines:
+                    amounts = re.findall(r'-?\d{1,3}(?:,\d{3})*\.\d{2}', line)
+                    amount_val = 0.0
+                    
+                    if amounts:
+                        amount_str = amounts[-1]
+                        try:
+                            amount_val = float(amount_str.replace(",", ""))
+                        except ValueError:
+                            amount_val = 0.0
+                            
                     extracted_items.append({
                         "description": line,
                         "amount": amount_val
                     })
-        except Exception:
-            pass
-            
+            except Exception:
+                pass
+        
+        # Handle CSV or Excel fallback
+        elif uploaded_file.name.lower().endswith(".csv"):
+            df = pd.read_csv(uploaded_file)
+            extracted_items = df.to_dict("records")
+        elif uploaded_file.name.lower().endswith(".xlsx"):
+            df = pd.read_excel(uploaded_file)
+            extracted_items = df.to_dict("records")
+
+        # Fallback if entirely unreadable
         if not extracted_items:
-            extracted_items = [{"description": "Manual Entry", "amount": 0.0}]
+            extracted_items = [{"description": "Manual Entry (No text extracted)", "amount": 0.0}]
                         
         st.session_state.items = extracted_items
 
+    # Safety checks for session state formatting
     if "items" not in st.session_state or not isinstance(st.session_state.items, list):
         st.session_state.items = [{"description": "Manual Entry", "amount": 0.0}]
 
     ignored_descriptions = ["AMEX Breakfast Credit", "THC AMEX CREDIT"]
-    
     safe_items = st.session_state.items if isinstance(st.session_state.items, list) else [{"description": "Manual Entry", "amount": 0.0}]
     
+    # Filter out ignored terms
     filtered_items = [
         item for item in safe_items 
         if isinstance(item, dict) and not any(ignored in str(item.get("description", "")) for ignored in ignored_descriptions)
@@ -72,6 +77,7 @@ if uploaded_file is not None:
     df_items = pd.DataFrame(filtered_items)
     
     st.info("Folio loaded. Review the extracted descriptions and amounts below, and make adjustments as needed:")
+    
     edited_df = st.data_editor(
         df_items, 
         num_rows="dynamic", 
@@ -80,6 +86,7 @@ if uploaded_file is not None:
     )
     st.session_state.items = edited_df.to_dict("records")
 else:
+    # Clear state when file is removed
     if "items" in st.session_state:
         del st.session_state.items
     if "current_file" in st.session_state:
