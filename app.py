@@ -12,56 +12,86 @@ with col1:
 with col2:
     departure_date = st.date_input("Departure Date")
 
+if "prev_arrival" not in st.session_state:
+    st.session_state.prev_arrival = arrival_date
+    
+if st.session_state.prev_arrival != arrival_date:
+    st.session_state.base_data = pd.DataFrame([
+        {"Date": arrival_date, "Category": "Field Notes (Breakfast)", "Amount": "0.00"}
+    ])
+    st.session_state.last_date = arrival_date
+    st.session_state.prev_arrival = arrival_date
+    if "charge_editor" in st.session_state:
+        del st.session_state["charge_editor"]
+
 st.markdown("---")
 st.markdown("#### Enter Charges")
-st.info("Log all eligible charges below. Use the 'Category' dropdown to sort them.")
+st.info("Log all eligible charges below. Amounts can be entered directly as numbers (e.g., 34.59).")
 
-# 2. Setup Data Editor for Charges
-if "charge_data" not in st.session_state:
-    st.session_state.charge_data = pd.DataFrame([
-        {"Date": arrival_date, "Category": "Field Notes (Breakfast)", "Amount": 0.0}
+# 2. Setup Data Editor using text for Amount to prevent tab-clearing bugs
+if "base_data" not in st.session_state:
+    st.session_state.base_data = pd.DataFrame([
+        {"Date": arrival_date, "Category": "Field Notes (Breakfast)", "Amount": "0.00"}
     ])
 
-# Determine the most recent date to use as the default for new rows
-if not st.session_state.charge_data.empty:
-    last_date = pd.to_datetime(st.session_state.charge_data["Date"].iloc[-1]).date()
-else:
-    last_date = arrival_date
+if "last_date" not in st.session_state:
+    st.session_state.last_date = arrival_date
 
 edited_df = st.data_editor(
-    st.session_state.charge_data,
+    st.session_state.base_data,
     num_rows="dynamic",
     column_config={
-        "Date": st.column_config.DateColumn("Charge Date", default=last_date),
+        "Date": st.column_config.DateColumn(
+            "Charge Date", 
+            default=st.session_state.last_date,
+            format="YYYY-MM-DD"
+        ),
         "Category": st.column_config.SelectboxColumn(
             "Category",
             options=["Field Notes (Breakfast)", "Other Property Charge"],
             required=True
         ),
-        "Amount": st.column_config.NumberColumn("Amount ($)", min_value=0.0, format="$%.2f")
+        "Amount": st.column_config.TextColumn(
+            "Amount ($)", 
+            help="Enter the dollar amount (e.g. 34.59)"
+        )
     },
     use_container_width=True,
     key="charge_editor"
 )
 
-# Sync state immediately so the next row added picks up any date edits you just made
-st.session_state.charge_data = edited_df
+if not edited_df.empty:
+    try:
+        st.session_state.last_date = pd.to_datetime(edited_df["Date"].iloc[-1]).date()
+    except Exception:
+        st.session_state.last_date = arrival_date
 
 # 3. Calculation Logic
 if st.button("Calculate Credits", type="primary"):
-    edited_df["Date"] = pd.to_datetime(edited_df["Date"]).dt.date
+    calc_df = edited_df.copy()
+    calc_df["Date"] = pd.to_datetime(calc_df["Date"]).dt.date
+    
+    # Safely convert text amount inputs to floats
+    def clean_amount(val):
+        try:
+            cleaned = str(val).replace("$", "").replace(",", "").strip()
+            return float(cleaned) if cleaned else 0.0
+        except ValueError:
+            return 0.0
+            
+    calc_df["Amount_Num"] = calc_df["Amount"].apply(clean_amount)
     
     total_breakfast_credit = 0.0
     total_breakfast_overage = 0.0
     breakdown = []
     
     # --- BREAKFAST CREDIT ($60/day non-rolling) ---
-    breakfast_df = edited_df[edited_df["Category"] == "Field Notes (Breakfast)"]
-    daily_breakfast = breakfast_df.groupby("Date")["Amount"].sum().reset_index()
+    breakfast_df = calc_df[calc_df["Category"] == "Field Notes (Breakfast)"]
+    daily_breakfast = breakfast_df.groupby("Date")["Amount_Num"].sum().reset_index()
     
     current_date = arrival_date
     while current_date < departure_date:
-        day_charge = daily_breakfast[daily_breakfast["Date"] == current_date]["Amount"].sum() if current_date in daily_breakfast["Date"].values else 0.0
+        day_charge = daily_breakfast[daily_breakfast["Date"] == current_date]["Amount_Num"].sum() if current_date in daily_breakfast["Date"].values else 0.0
         
         eligible_credit = min(day_charge, 60.0)
         day_overage = max(0.0, day_charge - 60.0)
@@ -78,8 +108,8 @@ if st.button("Calculate Credits", type="primary"):
         current_date += timedelta(days=1)
         
     # --- PROPERTY CREDIT ($100 Pool) ---
-    other_df = edited_df[edited_df["Category"] == "Other Property Charge"]
-    total_other_charges = other_df["Amount"].sum()
+    other_df = calc_df[calc_df["Category"] == "Other Property Charge"]
+    total_other_charges = other_df["Amount_Num"].sum()
     
     prop_credit_applied_to_other = min(total_other_charges, 100.0)
     remaining_prop_credit = 100.0 - prop_credit_applied_to_other
