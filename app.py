@@ -28,33 +28,34 @@ if uploaded_file is not None:
         except Exception:
             pass
             
-        # Fallback safeguard: if the PDF text layer is locked or empty, 
-        # initialize a clean editable row so the app remains fully functional
         if not extracted_items:
             extracted_items = [{"description": "Manual Entry (PDF text layer unreadable)", "amount": 0.0}]
                         
         st.session_state.items = extracted_items
 
-    if isinstance(st.session_state.items, list) and len(st.session_state.items) > 0:
-        ignored_descriptions = ["AMEX Breakfast Credit", "THC AMEX CREDIT"]
-        
-        filtered_items = [
-            item for item in st.session_state.items 
-            if isinstance(item, dict) and not any(ignored in str(item.get("description", "")) for ignored in ignored_descriptions)
-        ]
-        
-        df_items = pd.DataFrame(filtered_items)
-        
-        st.info("File loaded successfully. You can edit descriptions and amounts directly in the table below:")
-        edited_df = st.data_editor(
-            df_items, 
-            num_rows="dynamic", 
-            use_container_width=True,
-            key="folio_editor"
-        )
-        st.session_state.items = edited_df.to_dict("records")
-    else:
-        st.warning("Could not initialize data editor.")
+    if not isinstance(st.session_state.items, list):
+        st.session_state.items = [{"description": "Manual Entry", "amount": 0.0}]
+
+    ignored_descriptions = ["AMEX Breakfast Credit", "THC AMEX CREDIT"]
+    
+    filtered_items = [
+        item for item in st.session_state.items 
+        if isinstance(item, dict) and not any(ignored in str(item.get("description", "")) for ignored in ignored_descriptions)
+    ]
+    
+    if not filtered_items:
+        filtered_items = [{"description": "Manual Entry", "amount": 0.0}]
+
+    df_items = pd.DataFrame(filtered_items)
+    
+    st.info("File loaded successfully. You can edit descriptions and amounts directly in the table below:")
+    edited_df = st.data_editor(
+        df_items, 
+        num_rows="dynamic", 
+        use_container_width=True,
+        key="folio_editor"
+    )
+    st.session_state.items = edited_df.to_dict("records")
 else:
     if "items" in st.session_state:
         del st.session_state.items
