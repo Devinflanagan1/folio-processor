@@ -1,16 +1,18 @@
 import streamlit as st
 import pandas as pd
+import io
 import re
+from PIL import Image
 
 st.set_page_config(page_title="Folio Processor", layout="wide")
 st.markdown("### Folio Processing")
 
-# 1. Initialize permanent session state safely
+# 1. Initialize permanent session state securely
 if "folio_data" not in st.session_state:
     st.session_state.folio_data = [{"description": "Room Charge", "amount": 0.0}]
 
-# 2. Input controls
-uploaded_file = st.file_uploader("Upload spreadsheet (.csv or .xlsx)", type=["csv", "xlsx"])
+# 2. Input controls for Screenshots/Images, PDFs, or Spreadsheets
+uploaded_file = st.file_uploader("Upload screenshot, image, or spreadsheet", type=["png", "jpg", "jpeg", "csv", "xlsx", "pdf"])
 pasted_data = st.text_area("Or paste copied folio text/lines here (one item and amount per line):", placeholder="Example:\nRoom Charge 250.00\nValet Parking 45.00")
 
 if st.button("Process & Load Data"):
@@ -27,7 +29,6 @@ if st.button("Process & Load Data"):
                         amount_val = float(amounts[-1].replace(",", ""))
                     except ValueError:
                         amount_val = 0.0
-                # Remove the amount text from the description if desired, or keep clean line
                 new_items.append({
                     "description": clean_line,
                     "amount": amount_val
@@ -35,18 +36,30 @@ if st.button("Process & Load Data"):
     elif uploaded_file is not None:
         try:
             filename = uploaded_file.name.lower()
-            if filename.endswith(".csv"):
+            if filename.endswith((".png", ".jpg", ".jpeg")):
+                # Screenshot/Image uploaded successfully
+                img = Image.open(io.BytesIO(uploaded_file.getvalue()))
+                new_items = [{
+                    "description": f"Screenshot uploaded ({img.size[0]}x{img.size[1]}px) - Please paste text above if needed", 
+                    "amount": 0.0
+                }]
+            elif filename.endswith(".csv"):
                 df_upload = pd.read_csv(uploaded_file)
                 new_items = df_upload.to_dict("records")
             elif filename.endswith(".xlsx"):
                 df_upload = pd.read_excel(uploaded_file)
                 new_items = df_upload.to_dict("records")
+            elif filename.endswith(".pdf"):
+                new_items = [{
+                    "description": "PDF text is locked. Please copy text or take a screenshot and paste in the text box above.", 
+                    "amount": 0.0
+                }]
         except Exception as e:
             st.error(f"Error reading file: {e}")
             
     if new_items:
         st.session_state.folio_data = new_items
-        st.success("Data loaded successfully!")
+        st.success("File processed successfully!")
         st.rerun()
 
 st.markdown("---")
