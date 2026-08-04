@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-import pdfplumber
+from pypdf import PdfReader
 import io
 
 st.set_page_config(page_title="Folio Processor", layout="wide")
@@ -13,18 +13,18 @@ if uploaded_file is not None:
         extracted_items = []
         bytes_data = uploaded_file.getvalue()
         
-        with pdfplumber.open(io.BytesIO(bytes_data)) as pdf:
-            for page in pdf.pages:
-                text = page.extract_text()
-                if text:
-                    for line in text.split("\n"):
-                        clean_line = line.strip()
-                        if clean_line:
-                            extracted_items.append({
-                                "description": clean_line,
-                                "amount": 0.0
-                            })
-                            
+        reader = PdfReader(io.BytesIO(bytes_data))
+        for page in reader.pages:
+            text = page.extract_text()
+            if text:
+                for line in text.split("\n"):
+                    clean_line = line.strip()
+                    if clean_line:
+                        extracted_items.append({
+                            "description": clean_line,
+                            "amount": 0.0
+                        })
+                        
         st.session_state.items = extracted_items
 
     if isinstance(st.session_state.items, list) and len(st.session_state.items) > 0:
@@ -48,7 +48,7 @@ if uploaded_file is not None:
         else:
             st.info("All line items were filtered out based on your criteria.")
     else:
-        st.warning("No text lines could be read from this file.")
+        st.warning("No text could be extracted using the standard reader.")
 else:
     if "items" in st.session_state:
         del st.session_state.items
